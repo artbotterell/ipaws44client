@@ -72,6 +72,27 @@ a small file:
 
 With a grid square, the same alert delivered twice is printed once.
 
+## Download
+
+Prebuilt programs are on the
+[Releases](https://github.com/artbotterell/ipaws44client/releases) page:
+
+| File ends in | For |
+|---|---|
+| `x86_64-unknown-linux-musl.tar.gz` | Linux, 64-bit Intel/AMD (static; any distribution) |
+| `aarch64-unknown-linux-musl.tar.gz` | Linux, 64-bit ARM, e.g. Raspberry Pi OS 64-bit (static) |
+| `aarch64-apple-darwin.tar.gz` | macOS, Apple Silicon |
+| `x86_64-apple-darwin.tar.gz` | macOS, Intel |
+| `x86_64-pc-windows-msvc.zip` | Windows, 64-bit |
+
+`SHA256SUMS` lists each file's checksum. The macOS builds are not signed:
+the first time, remove the quarantine flag or allow the program in System
+Settings > Privacy & Security.
+
+```bash
+xattr -d com.apple.quarantine ./ipawsClient
+```
+
 ## Building
 
 Needs Rust ([rustup.rs](https://rustup.rs)).
