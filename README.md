@@ -30,7 +30,9 @@ ipawsClient
   port (default 80); the MQTT broker is always `HOST:1883`.
 
 The service is reachable only over 44net, so the machine running the client
-needs a 44net connection.
+needs a 44net connection. Its page, <http://44.27.128.55/> (also 44net only),
+describes the alert feed and the grid-square lookup that the client uses, for
+anyone who wants to subscribe or query them directly.
 
 ## Output
 
