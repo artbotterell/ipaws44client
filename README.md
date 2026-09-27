@@ -1,0 +1,87 @@
+# ipawsClient
+
+Command-line client for the **ipaws_on_44** alert relay on 44net (AMPRNet).
+Give it a Maidenhead grid square and it prints each public IPAWS emergency
+alert that concerns that square, as it arrives.
+
+```
+ipawsClient [grid square] [xml|raw|--xml|--raw] [--server HOST[:PORT]]
+```
+
+```bash
+ipawsClient CM87vh
+```
+
+```bash
+ipawsClient CM87vh raw
+```
+
+```bash
+ipawsClient
+```
+
+- `[grid square]`: 4 or 6 characters, e.g. `CM87` or `CM87vh`. Without one,
+  every alert received is printed, unfiltered (as JSON, unless `raw`/`xml` is
+  given).
+- `xml`, `raw`, `--xml`, `--raw` (any one, any position): print each alert as
+  the original CAP XML, byte for byte, digital signature intact. Without it,
+  alerts print as pretty-printed JSON with the signature removed.
+- `--server`: defaults to `44.27.128.55`. `PORT` is the lookup service's HTTP
+  port (default 80); the MQTT broker is always `HOST:1883`.
+
+The service is reachable only over 44net, so the machine running the client
+needs a 44net connection.
+
+## Output
+
+Each matching alert is written to standard output followed by a line of 72
+hyphens. Status and errors go to standard error, so standard output carries
+only alerts:
+
+```bash
+ipawsClient CM87vh > alerts.txt
+```
+
+Exit status: `2` for a usage error or malformed square, `1` if the startup
+lookup fails. Once running, the client reconnects to the broker on its own.
+
+## Which alerts match
+
+With no grid square, all of them. Otherwise, at startup the client asks the lookup service for the square's counties
+(FIPS codes) and NWS UGC codes. Each arriving alert is kept if any of its
+areas matches:
+
+1. **SAME geocode** naming one of the square's counties, one of their whole
+   states (`xx000`), or the whole US (`000000`). Codes for part of a county
+   (first digit not `0`) are ignored.
+2. **Polygon or circle** containing the square's center or any of its four
+   corners.
+3. **UGC geocode** in the square's UGC list (forecast zones and county-form
+   codes), consulted only for an area that has no SAME codes and no geometry.
+
+An alert whose `references` name an alert already printed within the last
+seven days is printed too, so Updates and Cancels follow the alerts they
+change even when they carry no area. The client remembers printed alerts in
+a small file:
+
+| OS | File |
+|---|---|
+| Windows | `%LOCALAPPDATA%\ipawsClient\seen.txt` |
+| macOS | `~/Library/Application Support/ipawsClient/seen.txt` |
+| Linux and others | `$XDG_STATE_HOME/ipawsClient/seen.txt`, or `~/.local/state/ipawsClient/seen.txt` |
+
+With a grid square, the same alert delivered twice is printed once.
+
+## Building
+
+Needs Rust ([rustup.rs](https://rustup.rs)).
+
+```bash
+cargo install --git https://github.com/artbotterell/ipaws44client
+```
+
+The JSON conversion comes from [jcap](https://github.com/artbotterell/jcap).
+
+## License
+
+MIT; see [LICENSE](LICENSE).

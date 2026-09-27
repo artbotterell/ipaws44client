@@ -1,0 +1,16 @@
+[package]
+name = "ipaws44client"
+version = "0.1.0"
+edition = "2024"
+description = "Command-line client for the ipaws_on_44 alert relay: prints IPAWS alerts for one Maidenhead grid square"
+license = "MIT"
+repository = "https://github.com/artbotterell/ipaws44client"
+
+[[bin]]
+name = "ipawsClient"
+path = "src/main.rs"
+
+[dependencies]
+jcap = { git = "https://github.com/artbotterell/jcap" }
+rumqttc = { version = "0.25", default-features = false }
+serde_json = { version = "1", features = ["preserve_order"] }
