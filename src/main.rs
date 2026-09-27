@@ -110,7 +110,8 @@ fn main() {
         if seen_path.is_none() {
             eprintln!("ipawsClient: no state directory; updates to earlier alerts won't be recognized");
         }
-        (filter::Square::new(bounds, &fips, &ugc), seen::Seen::load(seen_path))
+        let partials = string_list(&info["same_partial"]); // absent from older servers: empty
+        (filter::Square::new(bounds, &fips, &ugc, &partials), seen::Seen::load(seen_path))
     });
     if filtering.is_none() {
         eprintln!("ipawsClient: passing all alerts on {host}:1883 {topic}");

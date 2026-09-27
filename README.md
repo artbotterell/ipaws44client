@@ -49,13 +49,16 @@ lookup fails. Once running, the client reconnects to the broker on its own.
 
 ## Which alerts match
 
-With no grid square, all of them. Otherwise, at startup the client asks the lookup service for the square's counties
-(FIPS codes) and NWS UGC codes. Each arriving alert is kept if any of its
-areas matches:
+With no grid square, all of them. Otherwise, at startup the client asks the
+lookup service for the square's counties (FIPS codes), NWS UGC codes, and NWS
+partial-county partitions. Each arriving alert is kept if any of its areas
+matches:
 
 1. **SAME geocode** naming one of the square's counties, one of their whole
-   states (`xx000`), or the whole US (`000000`). Codes for part of a county
-   (first digit not `0`) are ignored.
+   states (`xx000`), the whole US (`000000`), or one of the partial-county
+   partitions the square touches (first digit `1`-`9`). A partition code for
+   another part of the county does not match. Only about 20 large or oddly
+   shaped counties are partitioned.
 2. **Polygon or circle** containing the square's center or any of its four
    corners.
 3. **UGC geocode** in the square's UGC list (forecast zones and county-form

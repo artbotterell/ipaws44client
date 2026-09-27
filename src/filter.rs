@@ -2,8 +2,8 @@
 //!
 //! Per area, in order:
 //! 1. a SAME geocode naming one of the square's counties, its whole state
-//!    (xx000), or the whole US (000000); sub-county codes (first digit not 0)
-//!    are ignored;
+//!    (xx000), the whole US (000000), or one of the NWS partial-county
+//!    partitions the square touches (first digit 1-9);
 //! 2. a polygon or circle containing the square's centroid or any corner;
 //! 3. only if the area has neither SAME codes nor geometry: a UGC geocode in
 //!    the square's UGC list.
@@ -42,16 +42,18 @@ pub struct Square {
     fips: HashSet<String>,
     states: HashSet<String>,
     ugc: HashSet<String>,
+    partials: HashSet<String>,
     points: [(f64, f64); 5], // (lat, lon): centroid, then the four corners
 }
 
 impl Square {
-    pub fn new(bounds: (f64, f64, f64, f64), fips: &[String], ugc: &[String]) -> Self {
+    pub fn new(bounds: (f64, f64, f64, f64), fips: &[String], ugc: &[String], partials: &[String]) -> Self {
         let (w, s, e, n) = bounds;
         Square {
             fips: fips.iter().cloned().collect(),
             states: fips.iter().filter_map(|f| f.get(..2).map(String::from)).collect(),
             ugc: ugc.iter().cloned().collect(),
+            partials: partials.iter().cloned().collect(),
             points: [((s + n) / 2.0, (w + e) / 2.0), (s, w), (s, e), (n, e), (n, w)],
         }
     }
@@ -86,8 +88,11 @@ impl Square {
     }
 
     fn same_matches(&self, v: &str) -> bool {
-        if v.len() != 6 || !v.bytes().all(|b| b.is_ascii_digit()) || !v.starts_with('0') {
-            return false; // malformed, or a sub-county code
+        if v.len() != 6 || !v.bytes().all(|b| b.is_ascii_digit()) {
+            return false;
+        }
+        if !v.starts_with('0') {
+            return self.partials.contains(v); // a partial-county partition
         }
         match (&v[1..3], &v[3..]) {
             ("00", "000") => true, // the whole US
@@ -149,8 +154,12 @@ mod tests {
     use serde_json::json;
 
     fn square(code: &str, fips: &[&str], ugc: &[&str]) -> Square {
+        square_p(code, fips, ugc, &[])
+    }
+
+    fn square_p(code: &str, fips: &[&str], ugc: &[&str], partials: &[&str]) -> Square {
         let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-        Square::new(decode(code).unwrap(), &s(fips), &s(ugc))
+        Square::new(decode(code).unwrap(), &s(fips), &s(ugc), &s(partials))
     }
 
     fn alert(area: Value) -> Value {
@@ -175,9 +184,18 @@ mod tests {
         assert!(sq.matches(&alert(json!({"geocode": [geo("SAME", "006085")]}))), "county");
         assert!(sq.matches(&alert(json!({"geocode": [geo("SAME", "006000")]}))), "statewide");
         assert!(sq.matches(&alert(json!({"geocode": [geo("SAME", "000000")]}))), "nationwide");
-        assert!(!sq.matches(&alert(json!({"geocode": [geo("SAME", "506085")]}))), "sub-county ignored");
+        assert!(!sq.matches(&alert(json!({"geocode": [geo("SAME", "506085")]}))), "partition not in the list");
         assert!(!sq.matches(&alert(json!({"geocode": [geo("SAME", "006001")]}))), "other county");
         assert!(!sq.matches(&alert(json!({"geocode": [geo("SAME", "004000")]}))), "other state");
+    }
+
+    #[test]
+    fn partial_county_codes() {
+        // DM79 touches Western and Central Arapahoe (408005, 508005), not Eastern (608005).
+        let sq = square_p("DM79", &["08005"], &[], &["408005", "508005"]);
+        assert!(sq.matches(&alert(json!({"geocode": [geo("SAME", "508005")]}))), "partition in the square");
+        assert!(!sq.matches(&alert(json!({"geocode": [geo("SAME", "608005")]}))), "other partition, same county");
+        assert!(sq.matches(&alert(json!({"geocode": [geo("SAME", "008005")]}))), "whole county still matches");
     }
 
     #[test]
