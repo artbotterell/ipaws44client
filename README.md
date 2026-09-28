@@ -4,6 +4,16 @@ Command-line client for the **ipaws_on_44** alert relay on 44net (AMPRNet).
 Give it a Maidenhead grid square and it prints each public IPAWS emergency
 alert that concerns that square, as it arrives.
 
+## What is IPAWS?
+
+IPAWS (the U.S. Integrated Public Alert and Warning System, operated by the
+Federal Emergency Management Agency) is the national master feed of public
+warning messages from local, state, and federal agencies. It includes weather
+warnings, earthquake notices, missing persons alerts, and local emergency
+alerts of all kinds. IPAWS is the primary source for wireless cellphone alerts
+and the Emergency Alert System on radio and television. This feed delivers
+alerts authenticated by FEMA within seconds of their issuance.
+
 ```
 ipawsClient [grid square] [xml|raw|--xml|--raw] [--server HOST[:PORT]]
 ```
