@@ -54,6 +54,15 @@ only alerts:
 ipawsClient CM87vh > alerts.txt
 ```
 
+Each status or error line on standard error starts with a UTC timestamp. The
+client reports each connection, and how long it was down before a
+reconnection:
+
+```
+2026-10-02T06:23:45Z ipawsClient: connection to 44.27.128.55:1883: Network timeout; retrying
+2026-10-02T06:24:20Z ipawsClient: reconnected to 44.27.128.55:1883 after 35 s; subscribing to ipaws/cap/json
+```
+
 Exit status: `2` for a usage error or malformed square, `1` if the startup
 lookup fails. Once running, the client reconnects to the broker on its own.
 

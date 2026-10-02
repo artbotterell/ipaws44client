@@ -86,7 +86,7 @@ impl Seen {
             std::fs::write(path, body)
         };
         if let Err(e) = write() {
-            eprintln!("ipawsClient: cannot save {}: {e}", path.display());
+            crate::note(format!("cannot save {}: {e}", path.display()));
         }
     }
 }

@@ -80,7 +80,7 @@ dependencies = [
 
 [[package]]
 name = "ipaws44client"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "jcap",
  "rumqttc",

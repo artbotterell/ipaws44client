@@ -73,8 +73,30 @@ fn string_list(v: &Value) -> Vec<String> {
     v.as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect()
 }
 
+/// "2026-10-02T06:23:45Z" for seconds since the Unix epoch.
+fn utc(secs: u64) -> String {
+    let (days, rem) = ((secs / 86400) as i64, secs % 86400);
+    // Civil date from day count (H. Hinnant's days-to-civil algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", rem / 3600, rem % 3600 / 60, rem % 60)
+}
+
+/// A status or error line on stderr, timestamped in UTC.
+pub fn note(msg: impl std::fmt::Display) {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    eprintln!("{} ipawsClient: {msg}", utc(now));
+}
+
 fn fail(code: i32, msg: impl std::fmt::Display) -> ! {
-    eprintln!("ipawsClient: {msg}");
+    note(msg);
     exit(code)
 }
 
@@ -100,21 +122,21 @@ fn main() {
             fail(1, format!("lookup at {} returned HTTP {status}: {info}", args.server));
         }
         let (fips, ugc) = (string_list(&info["fips"]), string_list(&info["ugc"]));
-        eprintln!(
-            "ipawsClient: watching {code} ({} counties: {}; {} UGC codes) on {host}:1883 {topic}",
+        note(format!(
+            "watching {code} ({} counties: {}; {} UGC codes) on {host}:1883 {topic}",
             fips.len(),
             fips.join(" "),
             ugc.len()
-        );
+        ));
         let seen_path = seen::default_path();
         if seen_path.is_none() {
-            eprintln!("ipawsClient: no state directory; updates to earlier alerts won't be recognized");
+            note("no state directory; updates to earlier alerts won't be recognized");
         }
         let partials = string_list(&info["same_partial"]); // absent from older servers: empty
         (filter::Square::new(bounds, &fips, &ugc, &partials), seen::Seen::load(seen_path))
     });
     if filtering.is_none() {
-        eprintln!("ipawsClient: passing all alerts on {host}:1883 {topic}");
+        note(format!("passing all alerts on {host}:1883 {topic}"));
     }
 
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0);
@@ -124,12 +146,21 @@ fn main() {
     let (client, mut connection) = Client::new(opts, 16);
 
     let stdout = std::io::stdout();
+    let mut connected_once = false;
+    let mut down_since: Option<std::time::Instant> = None;
     for event in connection.iter() {
         match event {
             // Subscribe on every (re)connect: the session is clean.
             Ok(Event::Incoming(Packet::ConnAck(_))) => {
+                let how = match (connected_once, down_since.take()) {
+                    (false, _) => format!("connected to {host}:1883"),
+                    (true, Some(t)) => format!("reconnected to {host}:1883 after {} s", t.elapsed().as_secs()),
+                    (true, None) => format!("reconnected to {host}:1883"),
+                };
+                connected_once = true;
+                note(format!("{how}; subscribing to {topic}"));
                 if let Err(e) = client.try_subscribe(topic, QoS::AtLeastOnce) {
-                    eprintln!("ipawsClient: subscribe: {e}");
+                    note(format!("subscribe: {e}"));
                 }
             }
             Ok(Event::Incoming(Packet::Publish(p))) => {
@@ -149,7 +180,7 @@ fn main() {
                     match parsed {
                         Ok(v) => v,
                         Err(e) => {
-                            eprintln!("ipawsClient: skipping unreadable message: {e}");
+                            note(format!("skipping unreadable message: {e}"));
                             continue;
                         }
                     }
@@ -180,7 +211,8 @@ fn main() {
             }
             Ok(_) => {}
             Err(e) => {
-                eprintln!("ipawsClient: connection to {host}:1883: {e}; retrying");
+                down_since.get_or_insert_with(std::time::Instant::now);
+                note(format!("connection to {host}:1883: {e}; retrying"));
                 std::thread::sleep(Duration::from_secs(5));
             }
         }
@@ -210,6 +242,15 @@ mod tests {
         assert!(p(&["CM87", "CM88"]).is_err());
         assert!(p(&["CM87", "--bogus"]).is_err());
         assert!(p(&["CM87", "--server"]).is_err());
+    }
+
+    #[test]
+    fn utc_timestamps() {
+        // Expected values from macOS `date -u -r <secs>`.
+        assert_eq!(utc(0), "1970-01-01T00:00:00Z");
+        assert_eq!(utc(951_782_400), "2000-02-29T00:00:00Z");
+        assert_eq!(utc(1_790_878_748), "2026-10-01T18:19:08Z");
+        assert_eq!(utc(4_102_444_799), "2099-12-31T23:59:59Z");
     }
 
     #[test]
