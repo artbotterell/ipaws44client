@@ -105,7 +105,7 @@ With a grid square, the same alert delivered twice is printed once.
 ## Download
 
 The current release is
-[v0.2.2](https://github.com/artbotterell/ipaws44client/releases/tag/v0.2.2).
+[v0.3.0](https://github.com/artbotterell/ipaws44client/releases/tag/v0.3.0).
 Prebuilt programs are on the
 [Releases](https://github.com/artbotterell/ipaws44client/releases) page:
 
