@@ -39,10 +39,12 @@ ipawsClient
 - `--server`: defaults to `44.27.128.55`. `PORT` is the lookup service's HTTP
   port (default 80); the MQTT broker is always `HOST:1883`.
 
-The service is reachable only over 44net, so the machine running the client
-needs a 44net connection. Its page, <http://44.27.128.55/> (also 44net only),
-describes the alert feed and the grid-square lookup that the client uses, for
-anyone who wants to subscribe or query them directly.
+The alert feed (MQTT) and the grid-square lookup answer 44net (AMPRNet)
+addresses only, so the machine running the client needs a 44net connection;
+from any other address the lookup returns HTTP 403 and the broker does not
+answer. The service's page, <http://44.27.128.55/>, is public; it describes
+the alert feed and the grid-square lookup that the client uses, for anyone
+who wants to subscribe or query them directly.
 
 ## Output
 
