@@ -143,18 +143,18 @@ Releases are built by GitHub Actions
 2. Tag that commit with the same version and push the tag:
 
    ```bash
-   git tag -a v0.3.0 -m "ipawsClient 0.3.0"
+   git tag -a vX.Y.Z -m "ipawsClient X.Y.Z"
    ```
 
    ```bash
-   git push origin v0.3.0
+   git push origin vX.Y.Z
    ```
 
 3. The workflow tests and builds the five targets listed under Download. If
    all succeed, it publishes a GitHub Release named after the tag, with the
    five archives, `SHA256SUMS`, and notes generated from the commits. If any
    build fails, nothing is published; fix it, delete the tag
-   (`git push --delete origin v0.3.0` and `git tag -d v0.3.0`), and tag again.
+   (`git push --delete origin vX.Y.Z` and `git tag -d vX.Y.Z`), and tag again.
 
 Running the workflow by hand (Actions > release > Run workflow, or
 `gh workflow run release.yml`) only builds; the archives are attached to the
