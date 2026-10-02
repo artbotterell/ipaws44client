@@ -123,7 +123,8 @@ fn main() {
         }
         let (fips, ugc) = (string_list(&info["fips"]), string_list(&info["ugc"]));
         note(format!(
-            "watching {code} ({} counties: {}; {} UGC codes) on {host}:1883 {topic}",
+            "v{} watching {code} ({} counties: {}; {} UGC codes) on {host}:1883 {topic}",
+            env!("CARGO_PKG_VERSION"),
             fips.len(),
             fips.join(" "),
             ugc.len()
@@ -136,7 +137,7 @@ fn main() {
         (filter::Square::new(bounds, &fips, &ugc, &partials), seen::Seen::load(seen_path))
     });
     if filtering.is_none() {
-        note(format!("passing all alerts on {host}:1883 {topic}"));
+        note(format!("v{} passing all alerts on {host}:1883 {topic}", env!("CARGO_PKG_VERSION")));
     }
 
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0);

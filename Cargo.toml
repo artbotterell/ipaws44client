@@ -1,6 +1,6 @@
 [package]
 name = "ipaws44client"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 description = "Command-line client for the ipaws_on_44 alert relay: prints IPAWS alerts for one Maidenhead grid square"
 license = "MIT"
