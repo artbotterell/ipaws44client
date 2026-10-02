@@ -55,10 +55,13 @@ ipawsClient CM87vh > alerts.txt
 ```
 
 Each status or error line on standard error starts with a UTC timestamp. The
-client reports each connection, and how long it was down before a
+first line names the client's version and what it is watching; after that
+the client reports each connection, and how long it was down before a
 reconnection:
 
 ```
+2026-10-02T06:20:02Z ipawsClient: v0.2.2 watching CM87vh (2 counties: 06081 06085; 3 UGC codes) on 44.27.128.55:1883 ipaws/cap/json
+2026-10-02T06:20:02Z ipawsClient: connected to 44.27.128.55:1883; subscribing to ipaws/cap/json
 2026-10-02T06:23:45Z ipawsClient: connection to 44.27.128.55:1883: Network timeout; retrying
 2026-10-02T06:24:20Z ipawsClient: reconnected to 44.27.128.55:1883 after 35 s; subscribing to ipaws/cap/json
 ```
@@ -98,6 +101,8 @@ With a grid square, the same alert delivered twice is printed once.
 
 ## Download
 
+The current release is
+[v0.2.2](https://github.com/artbotterell/ipaws44client/releases/tag/v0.2.2).
 Prebuilt programs are on the
 [Releases](https://github.com/artbotterell/ipaws44client/releases) page:
 
