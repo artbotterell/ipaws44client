@@ -1,4 +1,4 @@
-//! ipawsClient [grid square] [xml|raw|--xml|--raw] [--server HOST[:PORT]]
+//! ipawsClient [grid square] [xml|raw|--xml|--raw] [--server [http[s]://]HOST[:PORT]]
 //!
 //! Looks the square up on the ipaws_on_44 gridsquare service, subscribes to
 //! its MQTT alert feed, and prints each alert that concerns the square; with
@@ -7,23 +7,22 @@
 mod filter;
 mod seen;
 
-use std::io::{Read, Write};
-use std::net::{TcpStream, ToSocketAddrs};
+use std::io::Write;
 use std::process::exit;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rumqttc::{Client, Event, MqttOptions, Packet, QoS};
 use serde_json::Value;
 
-const DEFAULT_SERVER: &str = "44.27.128.55";
+const DEFAULT_SERVER: &str = "ipaws.kd6o.ampr.org";
 const SEPARATOR: &str = "------------------------------------------------------------------------";
-const USAGE: &str = "usage: ipawsClient [grid square] [xml|raw|--xml|--raw] [--server HOST[:PORT]]
+const USAGE: &str = "usage: ipawsClient [grid square] [xml|raw|--xml|--raw] [--server [http[s]://]HOST[:PORT]]
 
 Prints IPAWS alerts that concern a 4- or 6-character Maidenhead grid square,
 or every alert if no square is given, as pretty-printed JSON by default, or
 as the original CAP XML with xml/raw. Alerts are separated by a line of
-hyphens. --server defaults to 44.27.128.55; PORT is the lookup service's
-HTTP port (default 80); MQTT is always HOST:1883.";
+hyphens. --server defaults to ipaws.kd6o.ampr.org. The lookup goes to
+https://HOST[:PORT] unless http:// is given; MQTT is always HOST:1883.";
 
 #[derive(Debug, PartialEq)]
 struct Args {
@@ -47,26 +46,36 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
     Ok(Args { square, raw, server })
 }
 
-/// "host" or "host:port" -> (host, HTTP port); MQTT always uses host:1883.
-fn split_server(server: &str) -> (&str, u16) {
-    match server.rsplit_once(':') {
-        Some((h, p)) if !h.contains(':') => p.parse().map_or((server, 80), |p| (h, p)),
-        _ => (server, 80),
+/// "[http[s]://]host[:port]" -> (lookup base URL, MQTT host). HTTPS unless
+/// http:// is given; MQTT always uses host:1883.
+fn split_server(server: &str) -> Result<(String, &str), String> {
+    let (scheme, rest) = server.split_once("://").unwrap_or(("https", server));
+    if scheme != "https" && scheme != "http" {
+        return Err(format!("unsupported scheme {scheme}:// in --server"));
     }
+    let authority = rest.split('/').next().unwrap_or("");
+    let host = match authority.rsplit_once(':') {
+        Some((h, p)) if !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()) => h,
+        _ => authority,
+    };
+    if host.is_empty() {
+        return Err(format!("no host in --server {server}"));
+    }
+    Ok((format!("{scheme}://{authority}"), host))
 }
 
-/// GET http://host:port/path, HTTP/1.0: status and body.
-fn http_get(host: &str, port: u16, path: &str) -> Result<(u16, String), String> {
-    let addr = (host, port).to_socket_addrs().map_err(|e| e.to_string())?.next().ok_or("no address")?;
-    let mut s = TcpStream::connect_timeout(&addr, Duration::from_secs(10)).map_err(|e| e.to_string())?;
-    s.set_read_timeout(Some(Duration::from_secs(20))).map_err(|e| e.to_string())?;
-    write!(s, "GET {path} HTTP/1.0\r\nHost: {host}\r\nUser-Agent: ipawsClient/{}\r\n\r\n", env!("CARGO_PKG_VERSION"))
-        .map_err(|e| e.to_string())?;
-    let mut resp = String::new();
-    s.read_to_string(&mut resp).map_err(|e| e.to_string())?;
-    let (head, body) = resp.split_once("\r\n\r\n").ok_or("malformed HTTP response")?;
-    let status = head.split_whitespace().nth(1).and_then(|c| c.parse().ok()).ok_or("malformed status line")?;
-    Ok((status, body.to_string()))
+/// GET a URL: status and body, whatever the status.
+fn http_get(url: &str) -> Result<(u16, String), String> {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .timeout_global(Some(Duration::from_secs(20)))
+        .user_agent(format!("ipawsClient/{}", env!("CARGO_PKG_VERSION")))
+        .build()
+        .into();
+    let mut resp = agent.get(url).call().map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
+    let body = resp.body_mut().read_to_string().map_err(|e| e.to_string())?;
+    Ok((status, body))
 }
 
 fn string_list(v: &Value) -> Vec<String> {
@@ -107,19 +116,19 @@ fn main() {
         return;
     }
     let args = parse_args(&argv).unwrap_or_else(|e| fail(2, format!("{e}\n{USAGE}")));
-    let (host, http_port) = split_server(&args.server);
+    let (base, host) = split_server(&args.server).unwrap_or_else(|e| fail(2, format!("{e}\n{USAGE}")));
     let topic = if args.raw { "ipaws/cap/raw" } else { "ipaws/cap/json" };
 
     // No square: pass everything, so no lookup and no memory of printed alerts.
     let mut filtering = args.square.as_deref().map(|code| {
         let bounds = filter::decode(code)
             .unwrap_or_else(|e| fail(2, format!("{code:?} is not a Maidenhead square: {e}")));
-        let (status, body) = http_get(host, http_port, &format!("/v1/squares/{}", code.trim()))
-            .unwrap_or_else(|e| fail(1, format!("lookup at {} failed: {e}", args.server)));
+        let (status, body) = http_get(&format!("{base}/v1/squares/{}", code.trim()))
+            .unwrap_or_else(|e| fail(1, format!("lookup at {base} failed: {e}")));
         let info: Value = serde_json::from_str(&body)
-            .unwrap_or_else(|e| fail(1, format!("lookup at {} returned HTTP {status}, unreadable: {e}", args.server)));
+            .unwrap_or_else(|e| fail(1, format!("lookup at {base} returned HTTP {status}, unreadable: {e}")));
         if status != 200 {
-            fail(1, format!("lookup at {} returned HTTP {status}: {info}", args.server));
+            fail(1, format!("lookup at {base} returned HTTP {status}: {info}"));
         }
         let (fips, ugc) = (string_list(&info["fips"]), string_list(&info["ugc"]));
         note(format!(
@@ -255,9 +264,13 @@ mod tests {
     }
 
     #[test]
-    fn server_ports() {
-        assert_eq!(split_server("44.27.128.55"), ("44.27.128.55", 80));
-        assert_eq!(split_server("127.0.0.1:8098"), ("127.0.0.1", 8098));
-        assert_eq!(split_server("host.example:x"), ("host.example:x", 80));
+    fn server_forms() {
+        let ok = |s: &str| split_server(s).map(|(b, h)| (b, h.to_string())).unwrap();
+        assert_eq!(ok("ipaws.kd6o.ampr.org"), ("https://ipaws.kd6o.ampr.org".into(), "ipaws.kd6o.ampr.org".into()));
+        assert_eq!(ok("example.org:8443"), ("https://example.org:8443".into(), "example.org".into()));
+        assert_eq!(ok("http://127.0.0.1:8098"), ("http://127.0.0.1:8098".into(), "127.0.0.1".into()));
+        assert_eq!(ok("https://example.org/"), ("https://example.org".into(), "example.org".into()));
+        assert!(split_server("ftp://example.org").is_err());
+        assert!(split_server("https://").is_err());
     }
 }

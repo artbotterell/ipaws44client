@@ -15,7 +15,7 @@ and the Emergency Alert System on radio and television. This feed delivers
 alerts authenticated by FEMA within seconds of their issuance.
 
 ```
-ipawsClient [grid square] [xml|raw|--xml|--raw] [--server HOST[:PORT]]
+ipawsClient [grid square] [xml|raw|--xml|--raw] [--server [http[s]://]HOST[:PORT]]
 ```
 
 ```bash
@@ -36,13 +36,14 @@ ipawsClient
 - `xml`, `raw`, `--xml`, `--raw` (any one, any position): print each alert as
   the original CAP XML, byte for byte, digital signature intact. Without it,
   alerts print as pretty-printed JSON with the signature removed.
-- `--server`: defaults to `44.27.128.55`. `PORT` is the lookup service's HTTP
-  port (default 80); the MQTT broker is always `HOST:1883`.
+- `--server`: defaults to `ipaws.kd6o.ampr.org`. The lookup goes to
+  `https://HOST[:PORT]`, with the certificate checked, unless `http://` is
+  given; the MQTT broker is always `HOST:1883`.
 
 The alert feed (MQTT) and the grid-square lookup answer 44net (AMPRNet)
 addresses only, so the machine running the client needs a 44net connection;
 from any other address the lookup returns HTTP 403 and the broker does not
-answer. The service's page, <http://44.27.128.55/>, is public; it describes
+answer. The service's page, <https://ipaws.kd6o.ampr.org/>, is public; it describes
 the alert feed and the grid-square lookup that the client uses, for anyone
 who wants to subscribe or query them directly.
 
@@ -62,10 +63,10 @@ the client reports each connection, and how long it was down before a
 reconnection:
 
 ```
-2026-10-02T06:20:02Z ipawsClient: v0.2.2 watching CM87vh (2 counties: 06081 06085; 3 UGC codes) on 44.27.128.55:1883 ipaws/cap/json
-2026-10-02T06:20:02Z ipawsClient: connected to 44.27.128.55:1883; subscribing to ipaws/cap/json
-2026-10-02T06:23:45Z ipawsClient: connection to 44.27.128.55:1883: Network timeout; retrying
-2026-10-02T06:24:20Z ipawsClient: reconnected to 44.27.128.55:1883 after 35 s; subscribing to ipaws/cap/json
+2026-10-02T06:20:02Z ipawsClient: v0.3.0 watching CM87vh (2 counties: 06081 06085; 3 UGC codes) on ipaws.kd6o.ampr.org:1883 ipaws/cap/json
+2026-10-02T06:20:02Z ipawsClient: connected to ipaws.kd6o.ampr.org:1883; subscribing to ipaws/cap/json
+2026-10-02T06:23:45Z ipawsClient: connection to ipaws.kd6o.ampr.org:1883: Network timeout; retrying
+2026-10-02T06:24:20Z ipawsClient: reconnected to ipaws.kd6o.ampr.org:1883 after 35 s; subscribing to ipaws/cap/json
 ```
 
 Exit status: `2` for a usage error or malformed square, `1` if the startup
