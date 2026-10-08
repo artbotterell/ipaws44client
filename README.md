@@ -1,8 +1,8 @@
 # ipawsClient
 
 Command-line client for the **ipaws_on_44** alert relay on 44net (AMPRNet).
-Give it a Maidenhead grid square and it prints each public IPAWS emergency
-alert that concerns that square, as it arrives.
+Give it one or more Maidenhead grid squares and it prints each public IPAWS
+emergency alert that concerns any of them, as it arrives.
 
 ## What is IPAWS?
 
@@ -15,11 +15,15 @@ and the Emergency Alert System on radio and television. This feed delivers
 alerts authenticated by FEMA within seconds of their issuance.
 
 ```
-ipawsClient [grid square] [xml|raw|--xml|--raw] [--server [http[s]://]HOST[:PORT]]
+ipawsClient [grid square ...] [xml|raw|--xml|--raw] [--server [http[s]://]HOST[:PORT]]
 ```
 
 ```bash
 ipawsClient CM87vh
+```
+
+```bash
+ipawsClient CM87 CM88 CM97 CM98
 ```
 
 ```bash
@@ -30,9 +34,10 @@ ipawsClient CM87vh raw
 ipawsClient
 ```
 
-- `[grid square]`: 4 or 6 characters, e.g. `CM87` or `CM87vh`. Without one,
-  every alert received is printed, unfiltered (as JSON, unless `raw`/`xml` is
-  given).
+- `[grid square ...]`: one or more, each 4 or 6 characters, e.g. `CM87` or
+  `CM87vh`. An alert is printed if it concerns any of them; a repeated square is
+  looked up once. Without any square, every alert received is printed,
+  unfiltered (as JSON, unless `raw`/`xml` is given).
 - `xml`, `raw`, `--xml`, `--raw` (any one, any position): print each alert as
   the original CAP XML, byte for byte, digital signature intact. Without it,
   alerts print as pretty-printed JSON with the signature removed.
@@ -63,7 +68,7 @@ the client reports each connection, and how long it was down before a
 reconnection:
 
 ```
-2026-10-02T06:20:02Z ipawsClient: v0.3.0 watching CM87vh (2 counties: 06081 06085; 3 UGC codes) on ipaws.kd6o.ampr.org:1883 ipaws/cap/json
+2026-10-02T06:20:02Z ipawsClient: v0.3.0 watching CM87 CM98 (9 counties across 2 squares) on ipaws.kd6o.ampr.org:1883 ipaws/cap/json
 2026-10-02T06:20:02Z ipawsClient: connected to ipaws.kd6o.ampr.org:1883; subscribing to ipaws/cap/json
 2026-10-02T06:23:45Z ipawsClient: connection to ipaws.kd6o.ampr.org:1883: Network timeout; retrying
 2026-10-02T06:24:20Z ipawsClient: reconnected to ipaws.kd6o.ampr.org:1883 after 35 s; subscribing to ipaws/cap/json
@@ -74,19 +79,19 @@ lookup fails. Once running, the client reconnects to the broker on its own.
 
 ## Which alerts match
 
-With no grid square, all of them. Otherwise, at startup the client asks the
-lookup service for the square's counties (FIPS codes), NWS UGC codes, and NWS
-partial-county partitions. Each arriving alert is kept if any of its areas
-matches:
+With no grid squares, all of them. Otherwise, at startup the client looks up
+each square's counties (FIPS codes), NWS UGC codes, and NWS partial-county
+partitions. An arriving alert is kept if any of its areas matches any of the
+squares, by these tests:
 
-1. **SAME geocode** naming one of the square's counties, one of their whole
+1. **SAME geocode** naming one of a square's counties, one of their whole
    states (`xx000`), the whole US (`000000`), or one of the partial-county
    partitions the square touches (first digit `1`-`9`). A partition code for
    another part of the county does not match. Only about 20 large or oddly
    shaped counties are partitioned.
-2. **Polygon or circle** containing the square's center or any of its four
+2. **Polygon or circle** containing a square's center or any of its four
    corners.
-3. **UGC geocode** in the square's UGC list (forecast zones and county-form
+3. **UGC geocode** in a square's UGC list (forecast zones and county-form
    codes), consulted only for an area that has no SAME codes and no geometry.
 
 An alert whose `references` name an alert already printed within the last
@@ -100,7 +105,8 @@ a small file:
 | macOS | `~/Library/Application Support/ipawsClient/seen.txt` |
 | Linux and others | `$XDG_STATE_HOME/ipawsClient/seen.txt`, or `~/.local/state/ipawsClient/seen.txt` |
 
-With a grid square, the same alert delivered twice is printed once.
+With any grid square, the same alert delivered twice is printed once, and an
+alert concerning more than one of the squares is printed once.
 
 ## Download
 
