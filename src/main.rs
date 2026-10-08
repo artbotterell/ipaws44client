@@ -16,34 +16,38 @@ use serde_json::Value;
 
 const DEFAULT_SERVER: &str = "ipaws.kd6o.ampr.org";
 const SEPARATOR: &str = "------------------------------------------------------------------------";
-const USAGE: &str = "usage: ipawsClient [grid square] [xml|raw|--xml|--raw] [--server [http[s]://]HOST[:PORT]]
+const USAGE: &str = "usage: ipawsClient [grid square ...] [xml|raw|--xml|--raw] [--server [http[s]://]HOST[:PORT]]
 
-Prints IPAWS alerts that concern a 4- or 6-character Maidenhead grid square,
-or every alert if no square is given, as pretty-printed JSON by default, or
-as the original CAP XML with xml/raw. Alerts are separated by a line of
-hyphens. --server defaults to ipaws.kd6o.ampr.org. The lookup goes to
+Prints IPAWS alerts that concern one or more 4- or 6-character Maidenhead grid
+squares, or every alert if no square is given, as pretty-printed JSON by
+default, or as the original CAP XML with xml/raw. Alerts are separated by a line
+of hyphens. --server defaults to ipaws.kd6o.ampr.org. The lookup goes to
 https://HOST[:PORT] unless http:// is given; MQTT is always HOST:1883.";
 
 #[derive(Debug, PartialEq)]
 struct Args {
-    square: Option<String>,
+    squares: Vec<String>,
     raw: bool,
     server: String,
 }
 
 fn parse_args(args: &[String]) -> Result<Args, String> {
-    let (mut square, mut raw, mut server) = (None, false, DEFAULT_SERVER.to_string());
+    let (mut squares, mut raw, mut server): (Vec<String>, bool, String) =
+        (Vec::new(), false, DEFAULT_SERVER.to_string());
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.to_ascii_lowercase().as_str() {
             "xml" | "raw" | "--xml" | "--raw" => raw = true,
             "--server" => server = it.next().ok_or("--server needs a host")?.clone(),
             s if s.starts_with('-') => return Err(format!("unknown option {a}")),
-            _ if square.is_none() => square = Some(a.clone()),
-            _ => return Err(format!("unexpected argument {a}")),
+            _ => {
+                if !squares.iter().any(|s| s == a) {
+                    squares.push(a.clone());
+                }
+            }
         }
     }
-    Ok(Args { square, raw, server })
+    Ok(Args { squares, raw, server })
 }
 
 /// "[http[s]://]host[:port]" -> (lookup base URL, MQTT host). HTTPS unless
@@ -116,11 +120,14 @@ fn main() {
         return;
     }
     let args = parse_args(&argv).unwrap_or_else(|e| fail(2, format!("{e}\n{USAGE}")));
+    if args.squares.len() > 1 {
+        fail(2, format!("more than one grid square is not supported yet\n{USAGE}"));
+    }
     let (base, host) = split_server(&args.server).unwrap_or_else(|e| fail(2, format!("{e}\n{USAGE}")));
     let topic = if args.raw { "ipaws/cap/raw" } else { "ipaws/cap/json" };
 
     // No square: pass everything, so no lookup and no memory of printed alerts.
-    let mut filtering = args.square.as_deref().map(|code| {
+    let mut filtering = args.squares.first().map(|code| {
         let bounds = filter::decode(code)
             .unwrap_or_else(|e| fail(2, format!("{code:?} is not a Maidenhead square: {e}")));
         let (status, body) = http_get(&format!("{base}/v1/squares/{}", code.trim()))
@@ -239,17 +246,22 @@ mod tests {
 
     #[test]
     fn arguments() {
-        let json = Args { square: Some("CM87vh".into()), raw: false, server: DEFAULT_SERVER.into() };
-        assert_eq!(p(&["CM87vh"]), Ok(json));
+        let one = Args { squares: vec!["CM87vh".into()], raw: false, server: DEFAULT_SERVER.into() };
+        assert_eq!(p(&["CM87vh"]), Ok(one));
         for flag in ["xml", "raw", "--xml", "--raw", "XML", "--RAW"] {
             assert!(p(&["CM87vh", flag]).unwrap().raw, "{flag}");
             assert!(p(&[flag, "CM87vh"]).unwrap().raw, "{flag} first");
         }
         assert_eq!(p(&["CM87", "--server", "127.0.0.1"]).unwrap().server, "127.0.0.1");
-        let all = Args { square: None, raw: false, server: DEFAULT_SERVER.into() };
-        assert_eq!(p(&[]), Ok(all), "no arguments: every alert, as JSON");
-        assert_eq!(p(&["raw"]).unwrap().square, None);
-        assert!(p(&["CM87", "CM88"]).is_err());
+        let none = Args { squares: vec![], raw: false, server: DEFAULT_SERVER.into() };
+        assert_eq!(p(&[]), Ok(none), "no arguments: every alert, as JSON");
+        assert!(p(&["raw"]).unwrap().squares.is_empty());
+        // Multiple grids now accepted, in order.
+        assert_eq!(p(&["CM87", "CM88"]).unwrap().squares, vec!["CM87", "CM88"]);
+        // Interleaved with flags and server.
+        assert_eq!(p(&["CM97", "xml", "CM98", "--server", "h"]).unwrap().squares, vec!["CM97", "CM98"]);
+        // Exact-string de-duplication, first-seen order.
+        assert_eq!(p(&["CM88", "CM87", "CM88"]).unwrap().squares, vec!["CM88", "CM87"]);
         assert!(p(&["CM87", "--bogus"]).is_err());
         assert!(p(&["CM87", "--server"]).is_err());
     }
