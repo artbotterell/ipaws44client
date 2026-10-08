@@ -7,6 +7,7 @@
 mod filter;
 mod seen;
 
+use std::collections::HashSet;
 use std::io::Write;
 use std::process::exit;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -120,41 +121,47 @@ fn main() {
         return;
     }
     let args = parse_args(&argv).unwrap_or_else(|e| fail(2, format!("{e}\n{USAGE}")));
-    if args.squares.len() > 1 {
-        fail(2, format!("more than one grid square is not supported yet\n{USAGE}"));
-    }
     let (base, host) = split_server(&args.server).unwrap_or_else(|e| fail(2, format!("{e}\n{USAGE}")));
     let topic = if args.raw { "ipaws/cap/raw" } else { "ipaws/cap/json" };
 
     // No square: pass everything, so no lookup and no memory of printed alerts.
-    let mut filtering = args.squares.first().map(|code| {
-        let bounds = filter::decode(code)
-            .unwrap_or_else(|e| fail(2, format!("{code:?} is not a Maidenhead square: {e}")));
-        let (status, body) = http_get(&format!("{base}/v1/squares/{}", code.trim()))
-            .unwrap_or_else(|e| fail(1, format!("lookup at {base} failed: {e}")));
-        let info: Value = serde_json::from_str(&body)
-            .unwrap_or_else(|e| fail(1, format!("lookup at {base} returned HTTP {status}, unreadable: {e}")));
-        if status != 200 {
-            fail(1, format!("lookup at {base} returned HTTP {status}: {info}"));
-        }
-        let (fips, ugc) = (string_list(&info["fips"]), string_list(&info["ugc"]));
-        note(format!(
-            "v{} watching {code} ({} counties: {}; {} UGC codes) on {host}:1883 {topic}",
-            env!("CARGO_PKG_VERSION"),
-            fips.len(),
-            fips.join(" "),
-            ugc.len()
-        ));
+    // No squares: pass everything, so no lookup and no memory of printed alerts.
+    let mut filtering = if args.squares.is_empty() {
+        note(format!("v{} passing all alerts on {host}:1883 {topic}", env!("CARGO_PKG_VERSION")));
+        None
+    } else {
         let seen_path = seen::default_path();
         if seen_path.is_none() {
             note("no state directory; updates to earlier alerts won't be recognized");
         }
-        let partials = string_list(&info["same_partial"]); // absent from older servers: empty
-        (filter::Square::new(bounds, &fips, &ugc, &partials), seen::Seen::load(seen_path))
-    });
-    if filtering.is_none() {
-        note(format!("v{} passing all alerts on {host}:1883 {topic}", env!("CARGO_PKG_VERSION")));
-    }
+        let mut squares = Vec::new();
+        let mut counties: HashSet<String> = HashSet::new();
+        for code in &args.squares {
+            let bounds = filter::decode(code)
+                .unwrap_or_else(|e| fail(2, format!("{code:?} is not a Maidenhead square: {e}")));
+            let (status, body) = http_get(&format!("{base}/v1/squares/{}", code.trim()))
+                .unwrap_or_else(|e| fail(1, format!("lookup of {code} at {base} failed: {e}")));
+            let info: Value = serde_json::from_str(&body).unwrap_or_else(|e| {
+                fail(1, format!("lookup of {code} at {base} returned HTTP {status}, unreadable: {e}"))
+            });
+            if status != 200 {
+                fail(1, format!("lookup of {code} at {base} returned HTTP {status}: {info}"));
+            }
+            let (fips, ugc) = (string_list(&info["fips"]), string_list(&info["ugc"]));
+            let partials = string_list(&info["same_partial"]); // absent from older servers: empty
+            counties.extend(fips.iter().cloned());
+            squares.push(filter::Square::new(bounds, &fips, &ugc, &partials));
+        }
+        note(format!(
+            "v{} watching {} ({} counties across {} square{}) on {host}:1883 {topic}",
+            env!("CARGO_PKG_VERSION"),
+            args.squares.join(" "),
+            counties.len(),
+            args.squares.len(),
+            if args.squares.len() == 1 { "" } else { "s" },
+        ));
+        Some((squares, seen::Seen::load(seen_path)))
+    };
 
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0);
     let mut opts = MqttOptions::new(format!("ipawsClient-{}-{nanos}", std::process::id()), host, 1883);
@@ -203,11 +210,13 @@ fn main() {
                     }
                 };
                 let key = seen::key(&alert);
-                if let Some((square, seen)) = &filtering {
+                if let Some((squares, seen)) = &filtering {
                     if seen.contains(&key) {
                         continue; // already printed (e.g. redelivered)
                     }
-                    if !square.matches(&alert) && !seen::references(&alert).iter().any(|r| seen.contains(r)) {
+                    if !squares.iter().any(|sq| sq.matches(&alert))
+                        && !seen::references(&alert).iter().any(|r| seen.contains(r))
+                    {
                         continue;
                     }
                 }
