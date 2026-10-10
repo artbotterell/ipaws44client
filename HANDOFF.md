@@ -2,6 +2,37 @@
 
 Running notes for a fresh session on `ipawsClient` (repo `ipaws44client`).
 
+## 2026-10-10 — shorter MQTT keepalive (v0.4.1, released)
+
+**Symptom:** the client occasionally loses and regains the broker connection.
+
+**Investigation (systematic-debugging, Phase 1):** the client runs on the Mac in
+a terminal (stdin/out/err all a tty, not a pipe) as `ipawsClient CM98 CM97 CM88
+CM87`, reaching the broker through the Pi's 44net WireGuard gateway
+(`44.27.139.108`) → AMPRNet → newec2. From the broker log, most "disconnects"
+were the operator re-running the client (clean close + a new process id, once a
+47-min gap) — not a fault. The genuine auto-recovering drops were two broker
+keepalive timeouts (Oct 6 20:10, Oct 9 11:47): the *same* process went silent
+>90s and reconnected. Ruled out with evidence: broker restarts (all
+early-morning, none on those days), Mac sleep (no power events; held awake 122h),
+stdout backpressure (tty, not a pipe), Pi wg0 flap (handshake healthy, no
+wg/network/reboot logs). Conclusion: transient stalls on the long tunneled path
+that leave no log and the client already recovers from in 5s.
+
+**Change:** `opts.set_keep_alive(60s)` → **15s** (`src/main.rs:168`). The broker
+drops a silent client at 1.5x keepalive, so detection is ~22s instead of 90s.
+This speeds detection/reconnect; it does not reduce how often the stalls happen.
+Verified live: the restarted client reconnected as `k15` in the broker log.
+
+**Released as v0.4.1** (`a7ea721` version bump on top of `60e0ed7` the keepalive
+change; tag `v0.4.1` pushed; release workflow success, 6 assets). `cargo test`
+11/11. The operator installed the locally built binary to `/Applications/ipawsClient`
+and restarted it.
+
+**Aside, not changed:** the client uses a clean session (`c1` in the broker log),
+so alerts published during a reconnect gap are not redelivered. Gap-proof
+delivery would be a separate change (persistent session or a catch-up query).
+
 ## 2026-10-08 — multiple grid squares in the filter set (v0.4.0, released & deployed)
 
 `ipawsClient` now accepts more than one Maidenhead grid square at startup and
