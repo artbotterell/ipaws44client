@@ -165,7 +165,9 @@ fn main() {
 
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0);
     let mut opts = MqttOptions::new(format!("ipawsClient-{}-{nanos}", std::process::id()), host, 1883);
-    opts.set_keep_alive(Duration::from_secs(60));
+    // Short keepalive so a stalled link is noticed quickly: the broker drops a
+    // silent client at 1.5x this, so 15s means ~22s to detection instead of 90s.
+    opts.set_keep_alive(Duration::from_secs(15));
     opts.set_max_packet_size(1 << 20, 1 << 20);
     let (client, mut connection) = Client::new(opts, 16);
 
